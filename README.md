@@ -2,7 +2,7 @@
 
 > 把「常用许可证对比」这张表变成**可执行的规则**：给它一份依赖清单，它告诉你「你的项目能不能这样发布 + 你需要履行哪些义务」。
 
-[![CI](https://github.com/USERNAME/license-lens/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![CI](https://github.com/cvivi1109-glitch/license-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/cvivi1109-glitch/license-lens/actions)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 

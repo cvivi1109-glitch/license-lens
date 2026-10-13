@@ -25,5 +25,5 @@
 - GitHub Actions CI（Python 3.10 / 3.11 / 3.12）
 - 贡献指南、Issue 模板、PR 模板
 
-[Unreleased]: https://github.com/USERNAME/license-lens/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/USERNAME/license-lens/releases/tag/v0.1.0
+[Unreleased]: https://github.com/cvivi1109-glitch/license-lens/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/cvivi1109-glitch/license-lens/releases/tag/v0.1.0
