@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- 本工具的输出 ---
+report.md
+*report*.html
+examples/_tmp_*
+
+# --- IDE / 编辑器 ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- 操作系统 ---
+.DS_Store
+Thumbs.db
+desktop.ini

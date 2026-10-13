@@ -1,0 +1,19 @@
+# 让 Git 统一按内容判断文本文件，并规范换行符（Windows 上尤其重要）
+* text=auto
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+
+# Windows 脚本保持 CRLF
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 二进制
+*.png  binary
+*.jpg  binary
+*.pdf  binary
