@@ -1,0 +1,4 @@
+# 反例：项目打算用 MIT 发布，但引用了 GPL-3.0 的库 —— 会被判定为「禁止」。
+
+requests==2.32.3        # Apache-2.0
+some-gpl-tool==1.0.0    # GPL-3.0

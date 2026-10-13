@@ -1,0 +1,9 @@
+# license-lens 依赖清单示例（输入契约）
+# 每行格式：<包名> [比较符+版本] [# 许可证]
+# 没写许可证的依赖会被标为「待补全」，工具不会替你猜。
+
+requests==2.32.3        # Apache-2.0
+flask==3.0.3            # BSD-3-Clause
+pydantic==2.9.2         # MIT
+psycopg2-binary==2.9.9  # LGPL-3.0
+numpy==2.1.2
