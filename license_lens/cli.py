@@ -3,7 +3,7 @@
 用法：python -m license_lens <子命令> [参数]
 
 退出码（便于接入 CI）：
-    0 = 允许    1 = 有条件    2 = 禁止    3 = 未知/用法错误
+    0 = 允许    1 = 有条件 / 有未识别项    2 = 禁止    3 = 未知/用法错误
 """
 
 from __future__ import annotations
@@ -17,13 +17,17 @@ from .core import (
     CORE_IDS,
     LINKAGE_CHOICES,
     LINKAGE_DYNAMIC,
-    LEVEL_CONDITIONAL,
-    LEVEL_UNKNOWN,
+    adaptations,
     build_report,
     check,
+    commercial_advice,
+    normalize,
     obligations,
+    render_adaptations,
+    render_commercial,
     render_matrix,
     render_report,
+    render_scope,
     scan_text,
 )
 
@@ -40,8 +44,8 @@ def _ensure_utf8_output() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="license-lens",
-        description="开源许可证合规扫描器：输入依赖清单，输出「能不能这样发布 + 要履行哪些义务」。",
-        epilog="示例：python -m license_lens scan examples/deps.txt --project-license MIT",
+        description="开源许可证合规扫描器：查兼容性、看适用范围、评估商用、给适配方案。",
+        epilog="示例：python -m license_lens adapt GPL-3.0 MIT",
     )
     parser.add_argument("--version", action="version", version=f"license-lens {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<子命令>")
@@ -51,6 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_show = sub.add_parser("show", help="查看某种许可证的详情与义务")
     p_show.add_argument("license", help="许可证名称，例如 MIT / GPL-3.0 / Apache 2.0")
+
+    p_scope = sub.add_parser("scope", help="查看适用范围、商用边界与判定依据")
+    p_scope.add_argument("license", help="许可证名称")
 
     p_ob = sub.add_parser("obligations", help="只输出义务清单（便于贴进 README）")
     p_ob.add_argument("license", help="许可证名称")
@@ -65,6 +72,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="链接方式：dynamic（默认，import/独立进程）或 static（静态链接/修改库源码）",
     )
 
+    p_adapt = sub.add_parser("adapt", help="如果不能用，给出具体改法")
+    p_adapt.add_argument("inbound", help="上游依赖的许可证")
+    p_adapt.add_argument("outbound", help="你的项目许可证")
+    p_adapt.add_argument(
+        "--linkage",
+        choices=LINKAGE_CHOICES,
+        default=LINKAGE_DYNAMIC,
+        help="链接方式：dynamic（默认）或 static",
+    )
+
+    p_comm = sub.add_parser("commercial", help="评估能否商用、怎么商用")
+    p_comm.add_argument("license", nargs="?", help="许可证名称；不填则列出全部许可的商用结论")
+
     sub.add_parser("matrix", help="打印 5 种核心许可的兼容性矩阵")
 
     p_scan = sub.add_parser("scan", help="扫描依赖清单并生成合规报告")
@@ -77,21 +97,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _cmd_list(show_all: bool) -> int:
     ids = list(ALL_LICENSES) if show_all else list(CORE_IDS)
-    print(f"{'许可证':<14}{'类型':<12}{'课程建议':<20}{'来源'}")
+    print(f"{'许可证':<16}{'类型':<18}{'商用':<8}{'来源'}")
     print("-" * 68)
     for lid in ids:
         info = ALL_LICENSES[lid]
-        source = "课堂必记" if lid in CORE_IDS else "可选扩展"
-        print(f"{info.id:<14}{info.category:<12}{info.course_tip:<20}{source}")
+        source = "课堂必记" if lid in CORE_IDS else "扩展"
+        print(f"{info.id:<16}{info.category:<18}{info.commercial_use:<8}{source}")
     print()
-    print(f"共 {len(ids)} 种。用法：python -m license_lens show <许可证>")
+    print(f"共 {len(ids)} 种。")
+    print("用法：python -m license_lens scope <许可证>    # 看适用范围与法源")
+    print("      python -m license_lens commercial <许可证>  # 看商用评估")
     return 0
 
 
 def _cmd_show(raw: str) -> int:
-    lid = None
-    from .core import normalize
-
     lid = normalize(raw)
     if lid is None:
         print(f"❓ 无法识别的许可证：{raw!r}", file=sys.stderr)
@@ -100,11 +119,23 @@ def _cmd_show(raw: str) -> int:
     info = ALL_LICENSES[lid]
     print(f"{info.name}  ({info.id})")
     print(f"类型      : {info.category}")
+    print(f"商用      : {info.commercial_use}")
     print(f"课程建议  : {info.course_tip}")
     print(f"参考      : {info.url}")
     print("关键义务  :")
     for ob in info.obligations:
         print(f"  - {ob}")
+    print()
+    print(f"想看适用范围与判定依据：python -m license_lens scope {info.id}")
+    return 0
+
+
+def _cmd_scope(raw: str) -> int:
+    try:
+        print(render_scope(raw))
+    except Exception:
+        print(f"❓ 无法识别的许可证：{raw!r}", file=sys.stderr)
+        return 3
     return 0
 
 
@@ -125,7 +156,40 @@ def _cmd_check(inbound: str, outbound: str, linkage: str) -> int:
     print(f"   依据：{verdict.reason}")
     for note in verdict.notes:
         print(f"   提示：{note}")
+    if verdict.basis:
+        print(f"   法源（来自上游 {verdict.inbound}）：")
+        for item in verdict.basis[:5]:
+            print(f"     - {item}")
+    if verdict.level != "允许":
+        print(f"   改法：python -m license_lens adapt {verdict.inbound} {verdict.outbound}")
     return verdict.exit_code
+
+
+def _cmd_adapt(inbound: str, outbound: str, linkage: str) -> int:
+    verdict, options = adaptations(inbound, outbound, linkage=linkage)
+    print(render_adaptations(verdict, options))
+    return 0
+
+
+def _cmd_commercial(raw: str | None) -> int:
+    if raw:
+        try:
+            print(render_commercial(raw))
+        except Exception:
+            print(f"❓ 无法识别的许可证：{raw!r}", file=sys.stderr)
+            return 3
+        return 0
+
+    print(f"{'许可证':<30}{'类型':<22}{'商用':<6}{'一句话'}")
+    print("-" * 88)
+    for info in ALL_LICENSES.values():
+        note = info.commercial_notes[0] if info.commercial_notes else ""
+        if len(note) > 40:
+            note = note[:38] + "…"
+        print(f"{info.id:<30}{info.category:<22}{info.commercial_use:<6}{note}")
+    print()
+    print("看某个许可的详细商用评估：python -m license_lens commercial GPL-3.0")
+    return 0
 
 
 def _cmd_scan(manifest: str, project_license: str, linkage: str, output: str | None) -> int:
@@ -167,10 +231,16 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_list(args.all)
     if args.command == "show":
         return _cmd_show(args.license)
+    if args.command == "scope":
+        return _cmd_scope(args.license)
     if args.command == "obligations":
         return _cmd_obligations(args.license)
     if args.command == "check":
         return _cmd_check(args.inbound, args.outbound, args.linkage)
+    if args.command == "adapt":
+        return _cmd_adapt(args.inbound, args.outbound, args.linkage)
+    if args.command == "commercial":
+        return _cmd_commercial(args.license)
     if args.command == "matrix":
         print(render_matrix())
         return 0

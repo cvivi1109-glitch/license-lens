@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "license-lens"
-version = "0.1.0"
+version = "0.2.0"
 description = "开源许可证合规扫描器：输入依赖清单，输出能否这样发布与需要履行的义务"
 readme = "README.md"
 requires-python = ">=3.10"

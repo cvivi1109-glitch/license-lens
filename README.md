@@ -27,6 +27,10 @@
 ## 特性
 
 - **兼容性判定**：输入「上游依赖许可 + 我的项目许可 + 链接方式」，输出 `✅ 允许 / ⚠️ 有条件 / ❌ 禁止`，并给出**依据**与**改法**。
+- **适用范围**：每种许可证覆盖什么、不覆盖什么（著作权 / 专利 / 商标 / 分发 / 网络服务五个维度）。
+- **判定依据可追溯**：每条结论都附条款号（如 GPL-3.0 §5/§6/§11、Apache-2.0 §2/§6），不是凭感觉。
+- **商用评估**：按「销售软件 / SaaS / 内嵌商业产品 / 内部使用」分场景判断能不能商用。
+- **适配方案**：不能混用时给出 5~6 条具体改法（改许可 / 动态链接 / 进程隔离 / 换依赖 / 买授权 / 仅内部使用）。
 - **义务清单**：输出可直接勾选的 Markdown 待办清单（含 NOTICE、禁背书、专利授权等细节）。
 - **依赖清单扫描**：一次扫描整个 `deps.txt`，生成 Markdown 合规报告。
 - **兼容性矩阵**：一条命令打印 5 种核心许可的完整兼容性表，适合直接贴进汇报 PPT。
@@ -137,7 +141,26 @@ $ python -m license_lens matrix
 | **GPL-3.0** | ❌ 禁止 | ❌ 禁止 | ❌ 禁止 | ✅ 允许 | ❌ 禁止 |
 ```
 
-### 4. 其余命令
+### 4. 看适用范围、商用评估与适配方案
+
+```bash
+$ python -m license_lens scope GPL-3.0
+# 覆盖什么 / 不覆盖什么 / 专利商标 / 源码义务 / 网络服务 / 法源
+
+$ python -m license_lens commercial GPL-3.0
+# 销售软件 ✅ / SaaS ✅ / 闭源内嵌 ❌ / 内部使用 ✅
+
+$ python -m license_lens adapt LGPL-3.0 MIT --linkage static
+# 给出「改为动态链接」等 4~5 条具体改法
+
+$ python -m license_lens check GPL-3.0 MIT
+# 末尾会输出「法源（来自上游 GPL-3.0）」，逐条列出条款依据
+```
+
+> 完整的适用范围、适配与商用说明见
+> [docs/协议的适用范围与商用指南.md](docs/协议的适用范围与商用指南.md)。
+
+### 5. 其余命令
 
 ```bash
 python -m license_lens show "Apache 2.0"        # 查看某许可详情（支持各种写法）
@@ -192,7 +215,7 @@ RULES = (SameLicenseRule(), PermissiveInboundRule(),
 ## 开发与测试
 
 ```bash
-python -m unittest discover -s tests -v     # 38 个用例，全部无需第三方依赖
+python -m unittest discover -s tests -v     # 62 个用例，全部无需第三方依赖
 ```
 
 提交前自查：
@@ -208,9 +231,9 @@ git status && git log --oneline -5
 ## 已知问题与限制
 
 - **不是法律意见**：本工具的判定基于课堂许可对比表与常见实践，边界情况（尤其涉及专利、GPL-2.0-only、AGPL 网络服务条款）仍需人工确认。识别不了的组合会明确标为 `⚠️ 有条件`，不会假装通过。
-- **依赖清单需人工标注许可证**：V0.1.0 不会自动从 PyPI/npm 抓取依赖的许可证，需要你在清单里写明（未来版本计划支持自动抓取）。
+- **依赖清单需人工标注许可证**：V0.2.0 不会自动从 PyPI/npm 抓取依赖的许可证，需要你在清单里写明（未来版本计划支持自动抓取）。
 - **链接方式靠使用者声明**：`--linkage` 是使用者给出的假设；工具无法自动判断你是静态还是动态链接。
-- **知识库覆盖有限**：核心 5 种（MIT / Apache-2.0 / BSD-3-Clause / GPL-3.0 / LGPL-3.0）+ 4 种扩展（ISC / MPL-2.0 / AGPL-3.0 / Unlicense）。
+- **知识库覆盖**：核心 5 种（MIT / Apache-2.0 / BSD-3-Clause / GPL-3.0 / LGPL-3.0）+ 7 种扩展（ISC / MPL-2.0 / AGPL-3.0 / Unlicense / CC-BY-NC-4.0 / PolyForm-Noncommercial-1.0.0 / BUSL-1.1）。
 - **不支持 SPDX 表达式**：形如 `MIT OR Apache-2.0` 的双许可写法会被判为未识别。
 
 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。

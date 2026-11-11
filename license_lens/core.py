@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from .licenses import LICENSE_DB, OPTIONAL_LICENSES, LicenseInfo
@@ -107,6 +107,7 @@ class Verdict:
     reason: str
     notes: tuple[str, ...] = ()
     rule: str = ""
+    basis: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -144,6 +145,27 @@ def _verdict(ctx: CompatContext, level: str, reason: str, notes: tuple[str, ...]
         notes=notes,
         rule=rule,
     )
+
+
+class NonCommercialInboundRule:
+    """上游是非商业许可：只能用于非商业用途。"""
+
+    name = "noncommercial-inbound"
+
+    def match(self, ctx: CompatContext) -> Verdict | None:
+        if not ctx.inbound.is_noncommercial:
+            return None
+        return _verdict(
+            ctx,
+            LEVEL_CONDITIONAL,
+            f"{ctx.inbound.id} 是**非商业**许可：只允许非商业用途，不能用于以 {ctx.outbound.id} 发布的商业项目。",
+            notes=(
+                "如果项目不涉及商业用途，仍可使用，但需遵守署名等义务。",
+                "如果涉及收费、公司营利业务或付费服务，必须更换依赖或购买商业授权。",
+                "非商业许可通常不是 OSI 认可的开源许可证，课程项目不建议选用。",
+            ),
+            rule=self.name,
+        )
 
 
 class SameLicenseRule:
@@ -266,6 +288,7 @@ class FallbackRule:
 #: 规则注册表：按顺序求值，先匹配者胜出
 RULES: tuple[CompatibilityRule, ...] = (
     SameLicenseRule(),
+    NonCommercialInboundRule(),
     PermissiveInboundRule(),
     WeakCopyleftInboundRule(),
     StrongCopyleftInboundRule(),
@@ -290,7 +313,8 @@ def check(inbound: str, outbound: str, linkage: str = LINKAGE_DYNAMIC) -> Verdic
     for rule in RULES:
         verdict = rule.match(ctx)
         if verdict is not None:
-            return verdict
+            basis = tuple(ctx.inbound.basis)
+            return replace(verdict, basis=verdict.basis + basis)
     raise AssertionError("规则注册表缺少兜底规则")  # pragma: no cover
 
 
@@ -483,4 +507,224 @@ def render_matrix() -> str:
     for src, verdicts in rows:
         cells = " | ".join(f"{v.symbol} {v.level}" for v in verdicts)
         lines.append(f"| **{src}** | {cells} |")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# v0.2：适用范围 / 商用评估 / 适配方案
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class CommercialAdvice:
+    """某个商用场景下的结论。"""
+
+    scenario: str
+    verdict: str
+    note: str
+
+
+@dataclass(frozen=True)
+class Adaptation:
+    """一条把当前组合改成合规组合的具体路径。"""
+
+    title: str
+    feasibility: str
+    action: str
+    caveat: str = ""
+
+
+def render_scope(raw: str) -> str:
+    """输出一种许可证的适用范围、商用边界与法源。"""
+    info = lookup(raw)
+    lines = [
+        f"# {info.name}（{info.id}）",
+        "",
+        f"- 类型：**{info.category}**",
+        f"- 商用：**{info.commercial_use}**",
+        f"- OSI 认证：{'是' if info.osi_approved else '否'} ｜ FSF 自由许可：{'是' if info.fsf_free else '否'}",
+        f"- 专利授权：{'有（明示）' if info.patent_grant else '无（仅默认版权许可）'}",
+        f"- 商标授权：{'有' if info.trademark_license else '无'}",
+        f"- 链接传染性：{info.linking_effect}",
+        f"- 网络服务传染：{'是（AGPL 式）' if info.network_copyleft else '否'}",
+        f"- 源码义务：{info.source_obligation}",
+        f"- 参考：{info.url}",
+        "",
+        "## 适用范围（覆盖什么）",
+        "",
+    ]
+    lines += [f"- {x}" for x in info.covers] or ["- （未登记）"]
+    lines += ["", "## 不覆盖什么", ""]
+    lines += [f"- {x}" for x in info.does_not_cover] or ["- （未登记）"]
+    lines += ["", "## 商用说明", ""]
+    lines += [f"- {x}" for x in info.commercial_notes] or ["- （未登记）"]
+    lines += ["", "## 关键义务", ""]
+    lines += [f"- [ ] {x}" for x in info.obligations]
+    lines += ["", "## 判定依据（法源）", ""]
+    lines += [f"- {x}" for x in info.basis] or ["- （未登记）"]
+    lines += [
+        "",
+        "> 依据来自许可证官方原文与 OSI / FSF / choosealicense 的公开资料，不构成法律意见。",
+    ]
+    return "\n".join(lines)
+
+
+def commercial_advice(raw: str) -> tuple[LicenseInfo, tuple[CommercialAdvice, ...]]:
+    """按常见商用场景给出「能不能商用」的判断。"""
+    info = lookup(raw)
+
+    if info.is_noncommercial:
+        rows = tuple(
+            CommercialAdvice(s, "❌ 不可以", f"{info.id} 仅限非商业用途")
+            for s in ("销售软件", "SaaS 订阅服务", "公司内部营利业务", "嵌入商业硬件")
+        )
+        return info, rows
+
+    if info.id == "GPL-3.0":
+        return info, (
+            CommercialAdvice("销售软件", "✅ 可以", "可以收费，但对外分发时须提供完整源码，衍生作品须以 GPL 授权"),
+            CommercialAdvice("SaaS 服务", "✅ 可以", "GPL-3.0 不要求向网络用户提供源码（这是它与 AGPL 的关键差别）"),
+            CommercialAdvice("内部使用", "✅ 可以", "未对外分发，通常不触发源码义务"),
+            CommercialAdvice("闭源产品内嵌", "❌ 不可以", "把 GPL 代码链接进闭源产品后对外分发，违反 §5"),
+        )
+
+    if info.id == "LGPL-3.0":
+        return info, (
+            CommercialAdvice("销售软件（动态链接）", "✅ 可以", "保持动态链接并允许使用者替换库，即可闭源销售"),
+            CommercialAdvice("SaaS 服务", "✅ 可以", "动态链接下通常无源码义务"),
+            CommercialAdvice("静态链接", "⚠️ 有条件", "须提供目标文件等重链接方式，或以 LGPL/GPL 开源你的程序"),
+            CommercialAdvice("修改库本身", "⚠️ 有条件", "修改部分必须以 LGPL 开源"),
+        )
+
+    if info.id == "AGPL-3.0":
+        return info, (
+            CommercialAdvice("销售软件", "✅ 可以", "可以收费，但须提供完整源码，衍生作品须以 AGPL 授权"),
+            CommercialAdvice("SaaS / 网络服务", "⚠️ 有条件", "必须向所有网络用户提供完整对应源码（§13）"),
+            CommercialAdvice("内部使用", "✅ 可以", "仅内部使用、不对外提供服务时义务较轻"),
+            CommercialAdvice("闭源 SaaS", "❌ 不可以", "网络交互即触发源码义务"),
+        )
+
+    if info.commercial_use == "有条件":
+        return info, (
+            CommercialAdvice("商业使用", "⚠️ 有条件", "需满足许可中约定的条件，详见下方商用说明"),
+        )
+
+    return info, (
+        CommercialAdvice("销售软件", "✅ 可以", "可闭源销售，只需保留版权与许可声明"),
+        CommercialAdvice("SaaS 服务", "✅ 可以", "无额外源码义务"),
+        CommercialAdvice("嵌入商业产品", "✅ 可以", "保留声明即可"),
+        CommercialAdvice("公司内部使用", "✅ 可以", "无额外限制"),
+    )
+
+
+def adaptations(inbound: str, outbound: str, linkage: str = LINKAGE_DYNAMIC) -> tuple[Verdict, tuple[Adaptation, ...]]:
+    """给出「从当前组合改成合规组合」的具体路径。"""
+    verdict = check(inbound, outbound, linkage=linkage)
+    src, dst = normalize(inbound), normalize(outbound)
+    if src is None or dst is None:
+        return verdict, (
+            Adaptation("先修正许可证写法", "必须", "用 SPDX 标识或 choosealicense 上的标准名称重新输入。"),
+        )
+
+    info = ALL_LICENSES[src]
+    project = ALL_LICENSES[dst]
+    options: list[Adaptation] = []
+
+    if verdict.level == LEVEL_OK:
+        options.append(
+            Adaptation(
+                "保持现状",
+                "推荐",
+                f"直接以 {project.id} 发布，同时逐条履行 {info.id} 的义务。",
+                f"义务清单：python -m license_lens obligations {info.id}",
+            )
+        )
+        options.append(
+            Adaptation(
+                "补一份第三方声明",
+                "推荐",
+                "在 README 或 NOTICE 中列出所有依赖及其许可证，便于审计与交付。",
+                "可用 python -m license_lens scan deps.txt 生成这份清单。",
+            )
+        )
+        return verdict, tuple(options)
+
+    if info.is_noncommercial:
+        return verdict, (
+            Adaptation("换成可商用的替代品", "推荐", "寻找功能等价、且采用 MIT / Apache-2.0 / BSD-3 的库。", "最彻底，优先考虑。"),
+            Adaptation("购买商业授权", "可行", "联系版权方购买商业许可，取得商业使用资格。", "需要预算与商务流程。"),
+            Adaptation("限定为非商业用途", "有条件", "只在课程、研究、个人非商业项目中使用。", "一旦涉及收费或公司营利业务即违约。"),
+        )
+
+    if info.is_strong_copyleft:
+        options += [
+            Adaptation(f"把项目许可改为 {info.id}", "推荐", f"将项目整体改为 {info.id}，并公开源码。", "最简单、最稳妥，也是课堂项目的常见做法。"),
+            Adaptation("替换该依赖", "可行", "换成许可更宽松、功能等价的库。", "需要评估替换成本与功能差异。"),
+        ]
+        if info.network_copyleft:
+            options.append(
+                Adaptation("拆成独立网络服务", "有条件", "把该组件作为独立服务部署，通过 HTTP/API 调用，不链接进主程序。", "网络边界认定存在争议，务必咨询法律意见。")
+            )
+        else:
+            options.append(
+                Adaptation("拆成独立进程 / 服务", "有条件", "通过子进程、RPC 或独立服务调用，避免形成单一衍生作品。", "边界认定存在争议，务必咨询法律意见。")
+            )
+        options += [
+            Adaptation("仅内部使用、不对外分发", "有条件", "GPL 的源码义务由「分发」触发，内部使用通常不触发。", "一旦对外提供二进制或服务，需重新评估。"),
+            Adaptation("购买商业授权", "可行", "联系版权方购买豁免 GPL 的商业许可。", "多数开源项目并不提供。"),
+        ]
+        return verdict, tuple(options)
+
+    if info.is_weak_copyleft:
+        return verdict, (
+            Adaptation("改为动态链接", "推荐", "用动态库 / 独立进程方式调用，不要静态编译进你的程序。", "同时要允许使用者替换该库。"),
+            Adaptation(f"把项目许可改为 {info.id} 或 GPL-3.0", "可行", "让项目本身也采用传染性许可，义务自然满足。", "会改变你项目的开源方式。"),
+            Adaptation("替换该依赖", "可行", "换成 MIT / Apache-2.0 的等价库。", "优先确认是否有官方替代品。"),
+            Adaptation("购买商业授权", "可行", "部分商业库提供免 LGPL 义务的商业许可。", "需要预算。"),
+        )
+
+    return verdict, (
+        Adaptation("更换项目许可", "可行", f"把项目许可改为 {info.id}，即可直接使用该依赖。", "会改变你项目的开放方式。"),
+        Adaptation("替换该依赖", "可行", "换成与你项目许可兼容的库。", "注意检查该库自身的传递依赖。"),
+    )
+
+
+def render_commercial(raw: str) -> str:
+    """输出一种许可证的商用评估报告。"""
+    info, rows = commercial_advice(raw)
+    lines = [
+        f"# {info.name}（{info.id}）商用评估",
+        "",
+        f"- 总体结论：**{info.commercial_use}**",
+        f"- OSI 认证：{'是' if info.osi_approved else '否'}（非 OSI 许可不等于不能商用，但风险更高）",
+        "",
+        "| 场景 | 能否商用 | 说明 |",
+        "|------|----------|------|",
+    ]
+    lines += [f"| {r.scenario} | {r.verdict} | {r.note} |" for r in rows]
+    lines += ["", "## 商用注意事项", ""]
+    lines += [f"- {x}" for x in info.commercial_notes] or ["- （未登记）"]
+    lines += ["", "## 判定依据", ""]
+    lines += [f"- {x}" for x in info.basis] or ["- （未登记）"]
+    lines += ["", "> 本评估仅供参考，不构成法律意见；商用前建议由法务复核。"]
+    return "\n".join(lines)
+
+
+def render_adaptations(verdict: Verdict, options: tuple[Adaptation, ...]) -> str:
+    """输出适配方案。"""
+    lines = [
+        "# 适配方案",
+        "",
+        f"当前判定：{verdict.symbol} **{verdict.level}**（上游 {verdict.inbound} → 我的项目 {verdict.outbound}）",
+        "",
+        f"依据：{verdict.reason}",
+        "",
+        "## 可选的改法",
+        "",
+        "| 方案 | 可行性 | 具体做法 | 注意事项 |",
+        "|------|--------|----------|----------|",
+    ]
+    lines += [f"| {o.title} | {o.feasibility} | {o.action} | {o.caveat} |" for o in options]
+    if verdict.basis:
+        lines += ["", f"## 判定依据（法源，来自上游 {verdict.inbound}）", ""]
+        lines += [f"- {b}" for b in verdict.basis]
+    lines += ["", "> 适配方案是工程建议，最终合规性请以许可证原文与专业法律意见为准。"]
     return "\n".join(lines)
