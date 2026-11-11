@@ -97,12 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _cmd_list(show_all: bool) -> int:
     ids = list(ALL_LICENSES) if show_all else list(CORE_IDS)
-    print(f"{'许可证':<16}{'类型':<18}{'商用':<8}{'来源'}")
-    print("-" * 68)
+    print(f"{'许可证':<30}{'类型':<24}{'商用':<10}{'来源'}")
+    print("-" * 78)
     for lid in ids:
         info = ALL_LICENSES[lid]
         source = "课堂必记" if lid in CORE_IDS else "扩展"
-        print(f"{info.id:<16}{info.category:<18}{info.commercial_use:<8}{source}")
+        print(f"{info.id:<30}{info.category:<24}{info.commercial_use:<10}{source}")
     print()
     print(f"共 {len(ids)} 种。")
     print("用法：python -m license_lens scope <许可证>    # 看适用范围与法源")
